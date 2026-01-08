@@ -25,7 +25,8 @@ pub struct WindowState {
   pub voxelface_data: Vec<crate::VoxelFace>,
   
   // camera fields
-  
+  pub camera_buffer: wgpu::Buffer,
+  pub camera_bind_group: wgpu::BindGroup,
 }
 
 impl WindowState {
@@ -74,12 +75,55 @@ impl WindowState {
     
     surface.configure(&device, &surface_config);
     
+    // camera fields
+    let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Camera Buffer"),
+        size: 64, // 64 bytes = a 4x4 f32 matrix
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    
+    let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+      label: Some("Camera Bind Group Layout"),
+      entries: &[
+        wgpu::BindGroupLayoutEntry {
+          binding: 0,
+          visibility: wgpu::ShaderStages::VERTEX, // Only the vertex shader needs the camera
+          ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+          },
+          count: None,
+        },
+      ],
+    });
+    
+    let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+      layout: &camera_bind_group_layout,
+      entries: &[
+        wgpu::BindGroupEntry {
+          binding: 0,
+          resource: camera_buffer.as_entire_binding(),
+        },
+      ],
+      label: Some("camera_bind_group"),
+    });
+    
     // voxel drawing setup
     let shader = device.create_shader_module(wgpu::include_wgsl!("face_shader.wgsl"));
     
+    let render_pipeline_layout = device.create_pipeline_layout(
+      &wgpu::PipelineLayoutDescriptor {
+        label: Some("Render Pipeline Layout"),
+        bind_group_layouts: &[&camera_bind_group_layout],
+        immediate_size: 0,
+      }
+    );
+    
     let voxelface_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-      label: Some("Background Rect Pipeline"),
-      layout: None,
+      label: Some("Voxel Face Pipeline"),
+      layout: Some(&render_pipeline_layout),
       vertex: wgpu::VertexState {
         module: &shader,
         entry_point: Some("vs_main"),
@@ -107,46 +151,11 @@ impl WindowState {
     });
     
     let voxelface_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Instance Buffer"),
+        label: Some("Voxel Face Instance Buffer"),
         size: (std::mem::size_of::<crate::VoxelFace>() * 5000) as u64, // 5000 is the maximum size
         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    
-    // camera fields
-    // let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-    //     label: Some("Camera Buffer"),
-    //     size: 64, // 64 bytes = a 4x4 f32 matrix
-    //     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-    //     mapped_at_creation: false,
-    // });
-    
-    // let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-    //   label: Some("Camera Bind Group Layout"),
-    //   entries: &[
-    //     wgpu::BindGroupLayoutEntry {
-    //       binding: 0,
-    //       visibility: wgpu::ShaderStages::VERTEX, // Only the vertex shader needs the camera
-    //       ty: wgpu::BindingType::Buffer {
-    //         ty: wgpu::BufferBindingType::Uniform,
-    //         has_dynamic_offset: false,
-    //         min_binding_size: None,
-    //       },
-    //       count: None,
-    //     },
-    //   ],
-    // });
-    
-    // let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-    //   layout: &camera_bind_group_layout,
-    //   entries: &[
-    //     wgpu::BindGroupEntry {
-    //       binding: 0,
-    //       resource: camera_buffer.as_entire_binding(),
-    //     },
-    //   ],
-    //   label: Some("camera_bind_group"),
-    // });
     
     Ok(WindowState{
       surface,
@@ -160,6 +169,9 @@ impl WindowState {
       voxelface_instance_buffer,
       num_voxelface_instances: 0,
       voxelface_data: Vec::with_capacity(5000),
+      
+      camera_buffer,
+      camera_bind_group,
     })
   }
   

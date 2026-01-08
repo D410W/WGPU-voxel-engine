@@ -19,4 +19,6 @@ bytemuck = { version = "1.24.0", default-features = false, features = [
   "derive",
 ] }
 pollster = "0.4.0"
-glam = "0.30.10"
+glam = { version = "0.30.10", features = [
+  "bytemuck",
+] }

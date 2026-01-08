@@ -64,15 +64,25 @@ impl WindowGame {
     let mut command_encoder = ws.device.create_command_encoder(&command_enconder_descriptor); // CommandEncoder
         
     if true {
-      
       // println!("redraw");
-      // let projection = glam::Mat4::perspective_rh(90.0/3.1415926535/2.0, 16.0/9.0, 0.0, 10000.0); // (fov, aspect_ratio, near_z, far_z)
-      // let view = glam::Mat4::look_at_rh(glam::vec3(0.0, 0.0, 0.0), glam::vec3(0.0, 0.0, 0.0), glam::vec3(0.0, 1.0, 0.0)); // (eye_pos, target_pos, up_vector)
       
-      // let view_proj = projection * view;
-      // background update
+      // writing camera to buffer
+      let projection = glam::Mat4::perspective_rh(90.0/3.1415926535/2.0, ws.size.width as f32 / ws.size.height as f32, 0.0, 10000.0); // (fov, aspect_ratio, near_z, far_z)
+      let view = glam::Mat4::look_at_rh(glam::vec3(-1.0, 1.0, 1.0), glam::vec3(0.0, 0.0, 0.0), glam::vec3(0.0, 1.0, 0.0)); // (eye_pos, target_pos, up_vector)
+      
+      let view_proj = projection * view;
+      ws.queue.write_buffer(&ws.camera_buffer, 0, bytemuck::bytes_of(&view_proj));
+      
+      // sending voxel faces:
       ws.voxelface_data.clear();
       
+      ws.voxelface_data.push(crate::VoxelFace {
+        x: 0,
+        y: 0,
+        z: 0,
+        face: 1, // left
+        block_id: 3,
+      });
       ws.voxelface_data.push(crate::VoxelFace {
         x: 0,
         y: 0,
@@ -80,12 +90,11 @@ impl WindowGame {
         face: 2, // front
         block_id: 1,
       });
-      
       ws.voxelface_data.push(crate::VoxelFace {
-        x: 1,
+        x: 0,
         y: 0,
         z: 0,
-        face: 2, // front
+        face: 0, // top
         block_id: 2,
       });
       
@@ -139,7 +148,9 @@ impl WindowGame {
       
       // background
       render_pass.set_pipeline(&ws.voxelface_pipeline);
+      render_pass.set_bind_group(0, &ws.camera_bind_group, &[]); // sending camera info
       render_pass.set_vertex_buffer(0, ws.voxelface_instance_buffer.slice(..));
+      
       // draw 4 vertices
       render_pass.draw(0..4, 0..ws.num_voxelface_instances);
 
