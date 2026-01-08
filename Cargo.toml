@@ -4,3 +4,19 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = "1.0.100"
+wgpu = { version = "28.0.0", default-features = false, features = [
+  "wgsl",
+  "vulkan",
+  "dx12",
+  "metal",
+] }
+winit = { version = "0.30.12", default-features = false, features = [
+  "x11",
+  "rwh_06",
+] }
+bytemuck = { version = "1.24.0", default-features = false, features = [
+  "derive",
+] }
+pollster = "0.4.0"
+glam = "0.30.10"
