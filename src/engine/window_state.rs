@@ -197,5 +197,5 @@ impl WindowState {
   pub fn render(&mut self) {
     self.window.request_redraw();
   }
-  
+    
 }

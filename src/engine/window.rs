@@ -6,14 +6,17 @@ use winit::{
   window::{Window, WindowId},
 };
 
-use std::time::{Duration, Instant};
+use std::{
+  time::{Duration, Instant},
+  sync::Arc,
+};
 use anyhow::Result;
 
-use crate::WindowState;
+use crate::{WindowState, Camera3D};
 
 /// WindowGame. An abstraction layer between the User and the Engine. Is responsible for the game loop, rendering and input catching.
 pub struct WindowGame {
-  window_state: Option<WindowState>,  
+  window_state: Option<WindowState>,
   
   // game stuff
   current_time: Instant,
@@ -22,21 +25,16 @@ pub struct WindowGame {
   
   frame: u32,
   
-  // engine: Engine<GS>,
-  // game_state: GS,
+  camera: Camera3D,
   
 }
 
 impl WindowGame {
-  pub fn new() -> Result<Self> {    
-    // let (cols, rows) = (32, 18);
-    
-    // let mut eng = Engine::<GS>::new((cols, rows));
-    // let gs = GameState::new(&mut eng);
+  pub fn new() -> Self {
     
     let target_fps = 60;
     
-    Ok(Self{
+    Self{
       window_state: None,
       
       current_time: Instant::now(),
@@ -45,9 +43,8 @@ impl WindowGame {
       
       frame: 0,
       
-      // engine: eng,
-      // game_state: gs,
-    })
+      camera: Camera3D::new(glam::vec3(0.0, 0.0, 0.0)),
+    }
   }
   
   fn draw(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -63,17 +60,17 @@ impl WindowGame {
     };
     let mut command_encoder = ws.device.create_command_encoder(&command_enconder_descriptor); // CommandEncoder
         
-    if true {
-      // println!("redraw");
-      
-      // writing camera to buffer
+    if true { // sending camera movement to gpu
       let projection = glam::Mat4::perspective_rh(90.0/3.1415926535/2.0, ws.size.width as f32 / ws.size.height as f32, 0.0, 10000.0); // (fov, aspect_ratio, near_z, far_z)
-      let view = glam::Mat4::look_at_rh(glam::vec3(-1.0, 1.0, 1.0), glam::vec3(0.0, 0.0, 0.0), glam::vec3(0.0, 1.0, 0.0)); // (eye_pos, target_pos, up_vector)
+      let view = self.camera.get_view();
       
       let view_proj = projection * view;
       ws.queue.write_buffer(&ws.camera_buffer, 0, bytemuck::bytes_of(&view_proj));
+    }
+    
+    if true { // re-sending data to gpu
+      // println!("redraw");
       
-      // sending voxel faces:
       ws.voxelface_data.clear();
       
       ws.voxelface_data.push(crate::VoxelFace {
@@ -101,7 +98,7 @@ impl WindowGame {
       // check if buffer is big enough
       let needed_size = (ws.voxelface_data.len() * std::mem::size_of::<crate::VoxelFace>()) as u64;
       if needed_size > ws.voxelface_instance_buffer.size() {
-        // println!("Warning: resizing background buffer!");
+        println!("Warning: resizing voxel face buffer!");
         ws.voxelface_instance_buffer = ws.device.create_buffer(&wgpu::BufferDescriptor {
           label: Some("Instance Buffer"),
           size: needed_size * 2, // Grow x2
@@ -151,12 +148,10 @@ impl WindowGame {
       render_pass.set_bind_group(0, &ws.camera_bind_group, &[]); // sending camera info
       render_pass.set_vertex_buffer(0, ws.voxelface_instance_buffer.slice(..));
       
-      // draw 4 vertices
+      // draw 4 vertices for each face
       render_pass.draw(0..4, 0..ws.num_voxelface_instances);
 
     }
-    
-    // ws.text_atlas.trim();
     
     ws.queue.submit(std::iter::once(command_encoder.finish()));
     
@@ -164,25 +159,6 @@ impl WindowGame {
   
     Ok(())
   }
-  
-  // fn game_step(&mut self, event_loop: &ActiveEventLoop) {
-  //   // game loop logic is placed here
-    
-  //   self.engine.frame_counter += 1;
-    
-  //   if !(self.game_state.should_run()) {
-  //     event_loop.exit();
-      
-  //     return;
-  //   }
-    
-  //   self.engine.inp_dis.dispatch(&mut self.engine.inp_man, &mut self.game_state);
-    
-  //   self.game_state.update(&mut self.engine);
-    
-  //   self.engine.inp_man.cycle_events();
-    
-  // }
   
 }
 
@@ -203,11 +179,31 @@ impl ApplicationHandler for WindowGame {
       Err(e) => {
         eprintln!("Error initializing GPU: {}", e);
       },
-    };
+    }
   }
   
-  fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+  fn device_event(
+    &mut self,
+    _event_loop: &winit::event_loop::ActiveEventLoop,
+    _device_id: winit::event::DeviceId,
+    event: winit::event::DeviceEvent,
+  ) {
     match event {
+      winit::event::DeviceEvent::MouseMotion { delta } => {
+        self.camera.rotate_xy(delta); // representing (x, y) movement
+      }
+      _ => (),
+    }
+  }
+
+  fn window_event(
+    &mut self,
+    event_loop: &ActiveEventLoop,
+    _id: WindowId,
+    event: WindowEvent
+  ) {
+    match event {
+      // basic window functionality
       WindowEvent::CloseRequested => {
         println!("The close button was pressed.");
         event_loop.exit();
@@ -217,11 +213,51 @@ impl ApplicationHandler for WindowGame {
           ws.resize(new_size);
         }
       },
-      WindowEvent::KeyboardInput{ device_id: _id, event: _event, is_synthetic: synth } => {
-        if synth { return; }
-        
-        // self.engine.inp_man.process_winit_key(event);
+      //
+      
+      // mouse locking and unlocking through focus and click
+      WindowEvent::Focused(focus) => { // unlocking
+        if !focus {
+          if let Some(ws) = self.window_state.as_mut() {
+            let window = &ws.window;
+          
+            let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
+            window.set_cursor_visible(true);
+          }
+        }
       },
+      WindowEvent::MouseInput{ device_id: _id, state: _state, button: _button} => { // locking
+        if let Some(ws) = self.window_state.as_mut() {
+          let window = &ws.window;
+          
+          let _ = window.set_cursor_grab(winit::window::CursorGrabMode::Confined);
+          window.set_cursor_visible(false);
+        }
+      },
+      //
+      
+      // keyboard input processing
+      WindowEvent::KeyboardInput{ device_id: _id, event, is_synthetic: _synth } => {
+        use winit::keyboard::KeyCode;
+        
+        // if synth { return; }
+        
+        if let winit::keyboard::PhysicalKey::Code(kc) = event.physical_key {
+          match kc {
+            KeyCode::KeyS => { self.camera.move_relative([ 0.0,  0.0,  1.0], 0.1); },
+            KeyCode::KeyW => { self.camera.move_relative([ 0.0,  0.0, -1.0], 0.1); },
+            KeyCode::KeyD => { self.camera.move_relative([ 1.0,  0.0,  0.0], 0.1); },
+            KeyCode::KeyA => { self.camera.move_relative([-1.0,  0.0,  0.0], 0.1); },
+            KeyCode::KeyE => { self.camera.move_relative([ 0.0,  1.0,  0.0], 0.1); },
+            KeyCode::KeyQ => { self.camera.move_relative([ 0.0, -1.0,  0.0], 0.1); },
+            KeyCode::Escape => { event_loop.exit(); },
+            _ => (),
+          }
+        }
+      },
+      //
+      
+      // most essential rendering step
       WindowEvent::RedrawRequested => {
         
         let new_time = Instant::now();
@@ -259,6 +295,8 @@ impl ApplicationHandler for WindowGame {
           ws.render(); // calls window.request_redraw()
         }
       }
+      //
+      
       _ => (),
     }
   }

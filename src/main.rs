@@ -5,9 +5,7 @@ use winit::event_loop::EventLoop;
 use anyhow::Result;
 
 fn main() -> Result<()> {
-    println!("Hello, world!");
-
-    let mut game = WindowGame::new()?;
+    let mut game = WindowGame::new();
     
     let event_loop = EventLoop::new()?;
     

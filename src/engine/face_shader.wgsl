@@ -51,6 +51,9 @@ fn vs_main(
                          offsets_2d[in_vertex_index][0] - 0.5,
                          offsets_2d[in_vertex_index][1] - 0.5);
     } case 4: { // back
+      offset = vec3<f32>(offsets_2d[in_vertex_index][0] - 0.5,
+                         -0.5,
+                         offsets_2d[in_vertex_index][1] - 0.5);
     } case 5: { // down
       offset = vec3<f32>(offsets_2d[in_vertex_index][0] - 0.5,
                          offsets_2d[in_vertex_index][1] - 0.5,
